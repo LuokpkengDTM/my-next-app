@@ -160,14 +160,18 @@ function DashboardPage() {
       todayAlertsCount = dailyRiskData.reduce((a, b) => a + b.risk, 0);
     }
 
-    // Calculate uptime based on devices
+    // Calculate uptime based on patients with connected devices
     let connected = 0;
-    let total = 0;
-    Object.values(devicesData).forEach((d: any) => {
-      total++;
-      if (d.status === "Connected") connected++;
+    patients.forEach((p: any) => {
+      if (p.device_id && devicesData[p.device_id]) {
+        const dev = devicesData[p.device_id];
+        if (dev.status === "Connected") {
+          connected++;
+        }
+      }
     });
-    const uptimePercent = total > 0 ? ((connected / total) * 100).toFixed(1) : "99.8";
+    const totalPatients = patients.length;
+    const uptimePercent = totalPatients > 0 ? ((connected / totalPatients) * 100).toFixed(1) : "0.0";
 
     return {
       atRisk: atRiskCount,

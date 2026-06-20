@@ -41,7 +41,7 @@ export const patients: Patient[] = [
   { id: "p1", name: "มาร์กาเร็ต เฉิน", age: 78, gender: "Female", weight: 62, height: 160, deviceId: "FW-A1042", status: "risk", room: "Room 12B", lastUpdate: "2s ago", avatarSeed: "Margaret" },
   { id: "p2", name: "โรเบิร์ต เฮย์ส", age: 82, gender: "Male", weight: 75, height: 172, deviceId: "FW-A1043", status: "normal", room: "Room 09A", lastUpdate: "1s ago", avatarSeed: "Robert" },
   { id: "p3", name: "เอเลนอร์ พาร์ค", age: 74, gender: "Female", weight: 58, height: 158, deviceId: "FW-A1044", status: "normal", room: "Room 14C", lastUpdate: "4s ago", avatarSeed: "Eleanor" },
-  { id: "p4", name: "เจมส์ วิทแมน", age: 86, gender: "Male", weight: 70, height: 168, deviceId: "FW-A1045", status: "risk", room: "Room 03A", lastUpdate: "now", avatarSeed: "James" },
+  { id: "p4", name: "นายประหยัด โชคดี", age: 86, gender: "Male", weight: 70, height: 168, deviceId: "FW-A1045", status: "normal", room: "Room 03A", lastUpdate: "now", avatarSeed: "James" },
   { id: "p5", name: "โดโรธี ลิน", age: 79, gender: "Female", weight: 55, height: 155, deviceId: "FW-A1046", status: "normal", room: "Room 22B", lastUpdate: "3s ago", avatarSeed: "Dorothy" },
   { id: "p6", name: "เฮนรี่ อัลวาเรซ", age: 71, gender: "Male", weight: 80, height: 175, deviceId: "FW-A1047", status: "normal", room: "Room 18A", lastUpdate: "2s ago", avatarSeed: "Henry" },
   { id: "p7", name: "บีทริซ โอเคงโคว", age: 83, gender: "Female", weight: 60, height: 162, deviceId: "FW-A1048", status: "normal", room: "Room 07B", lastUpdate: "5s ago", avatarSeed: "Beatrice" },

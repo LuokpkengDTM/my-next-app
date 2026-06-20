@@ -19,7 +19,8 @@ import {
   ChevronDown,
   ChevronUp,
   Volume2,
-  Globe
+  Globe,
+  FileText
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
@@ -114,11 +115,40 @@ function PatientMobilePage() {
   }, [patient, testMockData]);
 
   const activeLogs = useMemo(() => {
-    if (testMockData?.logs !== undefined) return testMockData.logs;
-    return logs;
+    const list = testMockData?.logs !== undefined ? testMockData.logs : logs;
+    return Array.isArray(list) ? list : [];
   }, [logs, testMockData]);
 
   const activeFlatlineTicks = testMockData?.flatlineTicks !== undefined ? testMockData.flatlineTicks : flatlineTicks;
+
+  const isDeviceNotWorn = activePatient?.device_status === "Disconnected" || activeFlatlineTicks > 40 || activePatient?.device_skin_contact === false;
+
+  const activeTodayLogs = useMemo(() => {
+    const todayStr = new Date().toDateString();
+    return activeLogs.filter(l => {
+      if (!l.timestamp) return false;
+      try {
+        return new Date(l.timestamp).toDateString() === todayStr;
+      } catch (e) {
+        return false;
+      }
+    });
+  }, [activeLogs]);
+
+  // Pre-calculate risk summary details for visual display and modal
+  const riskLogs = useMemo(() => activeTodayLogs.filter(l => l.event_type === "Predicted Risk"), [activeTodayLogs]);
+  const riskCount = riskLogs.length;
+  const latestRisk = riskLogs[0];
+  const latestTimeStr = useMemo(() => {
+    if (!latestRisk || !latestRisk.timestamp) return "";
+    try {
+      let timeStr = new Date(latestRisk.timestamp).toLocaleTimeString(lang === "th" ? "th-TH" : "en-US", { hour: "2-digit", minute: "2-digit" });
+      if (lang === "th") timeStr += " น.";
+      return timeStr;
+    } catch (e) {
+      return "";
+    }
+  }, [latestRisk, lang]);
 
   const [isTestHarnessVisible, setIsTestHarnessVisible] = useState(false);
   useEffect(() => {
@@ -192,7 +222,7 @@ function PatientMobilePage() {
 
     const startPollingFallback = () => {
       if (pollIntervalRef.current) return; // Already polling
-      console.log("⚠️ WebSocket not connected. Falling back to HTTP polling (3.0s)");
+      console.log("[Warning] WebSocket not connected. Falling back to HTTP polling (3.0s)");
       pollIntervalRef.current = setInterval(async () => {
         await fetchPatientDataOnce();
       }, 3000);
@@ -210,7 +240,7 @@ function PatientMobilePage() {
       
       const ws = api.connectPatientWS(id, (data) => {
         if (isClosed) return;
-        console.log("📨 WebSocket update received:", data);
+        console.log("[WS Update] WebSocket update received:", data);
         if (data) {
           // Format message check
           if (data.live_message && data.live_message === lastClearedMessageRef.current) {
@@ -233,12 +263,12 @@ function PatientMobilePage() {
       wsRef.current = ws;
 
       ws.onopen = () => {
-        console.log("✅ WebSocket connection established.");
+        console.log("[WS Open] WebSocket connection established.");
         stopPollingFallback();
       };
 
       ws.onclose = () => {
-        console.log("❌ WebSocket closed.");
+        console.log("[WS Closed] WebSocket closed.");
         if (!isClosed) {
           startPollingFallback();
           // Try reconnecting in 5 seconds
@@ -298,7 +328,7 @@ function PatientMobilePage() {
         toast.success(lang === "th" ? "ส่งคำรับทราบสำเร็จ" : "Acknowledgment sent successfully");
       } else {
         if (!testMockData) {
-          await api.sendPublicPatientMessage(id, `⚠️ ผู้ป่วยแจ้งไม่เข้าใจข้อความก่อนหน้า: "${originalMessage}"`);
+          await api.sendPublicPatientMessage(id, `[Warning] ผู้ป่วยแจ้งไม่เข้าใจข้อความก่อนหน้า: "${originalMessage}"`);
         }
         toast.info(lang === "th" ? "แจ้งผู้ดูแลเรียบร้อยว่าไม่เข้าใจข้อความ" : "Caregiver notified that you did not understand.");
       }
@@ -310,25 +340,42 @@ function PatientMobilePage() {
   };
 
   const handleReadSummary = () => {
-    let summaryText = "";
-    if (lang === "th") {
-      summaryText = `สรุปข้อมูลสุขภาพของคุณ ${activePatient.name} ครับ. สถานะในขณะนี้คือ ${isRisk ? "ตรวจพบความเสี่ยงหกล้มฉุกเฉินครับ" : "ปลอดภัยดีครับ"}. อุปกรณ์สวมใส่ ${isDeviceNotWorn ? "ขาดการเชื่อมต่อหรือสวมใส่ไม่กระชับครับ โปรดตรวจสอบอุปกรณ์ครับ" : "เชื่อมต่อปกติและแนบผิวดีครับ"}.`;
-    } else {
-      summaryText = `Summary for ${activePatient.name}. Currently, your status is ${isRisk ? "Fall detected, assistance requested" : "Safe"}. Wearable device is ${isDeviceNotWorn ? "disconnected or loose, please check your device" : "connected normally and secure"}.`;
-    }
-    speakText(summaryText, lang);
-    
-    const list = lang === "th" 
-      ? [
-          isRisk ? "🚨 สถานะ: ตรวจพบการหกล้มฉุกเฉิน!" : "🟢 สถานะสุขภาพ: ปลอดภัยดี",
-          isDeviceNotWorn ? "⚠️ อุปกรณ์: ขาดการเชื่อมต่อหรือหลวม" : "⚡ อุปกรณ์: เชื่อมต่อและสวมใส่ปกติ"
-        ]
-      : [
-          isRisk ? "🚨 Status: Fall Detected!" : "🟢 Health Status: Safe",
-          isDeviceNotWorn ? "⚠️ Device: Loose or Detached" : "⚡ Device: Connected and Secure"
-        ];
-    setSummaryList(list);
-    setSummaryTitle(lang === "th" ? "สรุปสถานะสุขภาพของคุณ" : "Your Health Status Summary");
+    // Note: speakText is removed as requested by the user.
+    const fallDetailStr = lang === "th"
+      ? (riskCount > 0 
+          ? `ตรวจพบความเสี่ยงล้มวันนี้: ${riskCount} ครั้ง (ล่าสุดเวลา ${latestTimeStr})` 
+          : "วันนี้ไม่พบประวัติการหกล้มครับ")
+      : (riskCount > 0 
+          ? `Fall risk detected today: ${riskCount} time(s) (latest at ${latestTimeStr})` 
+          : "No fall risk detected today");
+
+    const connDetailStr = lang === "th"
+      ? (isDeviceNotWorn 
+          ? "การเชื่อมต่อ: อุปกรณ์หลุดหรือสวมใส่ไม่กระชับครับ" 
+          : "การเชื่อมต่อ: อุปกรณ์สวมใส่ปกติและเชื่อมต่อแนบสนิทครับ")
+      : (isDeviceNotWorn 
+          ? "Connection: Device is loose or detached" 
+          : "Connection: Wearable is connected and secure");
+
+    const list = [
+      {
+        icon: isRisk ? "risk" : "safe",
+        text: lang === "th" 
+          ? (isRisk ? "สถานะสุขภาพปัจจุบัน: ตรวจพบการหกล้มฉุกเฉินครับ!" : "สถานะสุขภาพปัจจุบัน: ปลอดภัยดีครับ")
+          : (isRisk ? "Current Health Status: Fall Detected!" : "Current Health Status: Safe")
+      },
+      {
+        icon: riskCount > 0 ? "risk" : "safe",
+        text: fallDetailStr
+      },
+      {
+        icon: isDeviceNotWorn ? "warn" : "conn",
+        text: connDetailStr
+      }
+    ];
+
+    setSummaryList(list as any);
+    setSummaryTitle(lang === "th" ? "สรุปรายละเอียดสุขภาพและการเชื่อมต่อ" : "Health & Connection Status Summary");
     setSummaryOpen(true);
   };
 
@@ -390,13 +437,12 @@ function PatientMobilePage() {
     );
   }
 
-  // Device not worn warning trigger
-  const isDeviceNotWorn = activePatient.device_status === "Disconnected" || activeFlatlineTicks > 40 || activePatient.device_skin_contact === false;
+  // Device not worn warning trigger (defined at the top of the component)
 
-  const isRisk = activePatient.status === "risk";
+  const isRisk = activePatient?.status === "risk";
   const locale = lang === "th" ? "th-TH" : "en-US";
   const suffix = lang === "th" ? " น." : "";
-  const currentTimeStr = activePatient.fall_timestamp 
+  const currentTimeStr = activePatient?.fall_timestamp 
     ? new Date(activePatient.fall_timestamp).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" }) + suffix
     : new Date().toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" }) + suffix;
 
@@ -432,7 +478,7 @@ function PatientMobilePage() {
       `}</style>
 
       {/* R7: Caregiver Message Modal (Stays on screen until resolved) */}
-      {activePatient.live_message && !activePatient.live_message.startsWith("⚠️ ผู้ป่วย") && (
+      {activePatient.live_message && !activePatient.live_message.startsWith("[Warning] ผู้ป่วย") && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-6">
           <div className={cn("w-full max-w-sm p-6 rounded-xl border flex flex-col gap-4 text-center shadow-none", themeStyles.cardBg)}>
             <div className="flex justify-between items-center border-b pb-2">
@@ -469,9 +515,15 @@ function PatientMobilePage() {
       <div className="phone-mockup-wrapper">
         <div className={cn("phone-mockup-screen w-full h-full flex flex-col relative overflow-hidden pb-24", themeStyles.bg)}>
           
-          <div className="bg-[#1e293b] border-b border-[#334155] text-white pt-2.5 pb-6 px-6 rounded-b-xl shadow-none flex flex-col gap-4 relative shrink-0 z-20">
+          <div className={cn("border-b text-white pt-2.5 pb-6 px-6 rounded-b-xl shadow-none flex flex-col gap-4 relative shrink-0 z-20 transition-all duration-300", 
+            appTheme === "light" 
+              ? "bg-slate-200 border-slate-350 text-slate-900" 
+              : "bg-[#1e293b] border-[#334155] text-white"
+          )}>
             {/* iOS status bar with Dynamic Island */}
-            <div className="w-full flex justify-between items-center pt-2 pb-1 relative shrink-0">
+            <div className={cn("w-full flex justify-between items-center pt-2 pb-1 relative shrink-0 transition-colors", 
+              appTheme === "light" ? "text-slate-900" : "text-white"
+            )}>
               <span className="font-bold tracking-tight text-xs z-30">9:41</span>
               
               {/* Dynamic Island Component */}
@@ -539,66 +591,102 @@ function PatientMobilePage() {
             </div>
             
             {/* Collapsible Accessibility Header Card */}
-            <div className="bg-white/10 border border-white/15 rounded-xl p-3 shadow-none mt-1 text-left">
+            <div className={cn("rounded-xl p-3 shadow-none mt-1 text-left border transition-all duration-300", 
+              appTheme === "light" 
+                ? "bg-white border-slate-350 text-slate-900" 
+                : "bg-white/10 border-white/15 text-white"
+            )}>
               {!headerExpanded ? (
                 // Collapsed State
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2.5">
                     {appTheme === "light" ? (
-                      <Sun className="h-5 w-5 text-amber-400 shrink-0" />
+                      <Sun className="h-5 w-5 text-amber-500 shrink-0" />
                     ) : (
                       <Moon className="h-5 w-5 text-indigo-300 shrink-0" />
                     )}
-                    <span className="font-semibold text-slate-200 select-none" style={getStyle(16)}>
+                    <span className={cn("font-extrabold select-none transition-colors", 
+                      appTheme === "light" ? "text-slate-800" : "text-slate-200"
+                    )} style={getStyle(18)}>
                       {lang === "th" ? `สวัสดีครับคุณ${activePatient.name}` : `Hello, ${activePatient.name}`}
                     </span>
                   </div>
                   <button
                     onClick={() => setHeaderExpanded(true)}
-                    className="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-all cursor-pointer flex items-center justify-center border border-white/10"
+                    className={cn(
+                      "p-2 rounded-lg transition-all cursor-pointer flex items-center justify-center border min-w-[44px] min-h-[44px]", 
+                      appTheme === "light" 
+                        ? "text-slate-700 border-slate-300 bg-slate-100 hover:bg-slate-200" 
+                        : "text-white/80 hover:text-white hover:bg-white/10 border-white/10 bg-white/5"
+                    )}
                     title="Expand settings"
                   >
-                    <ChevronDown className="h-5 w-5 stroke-[2.5]" />
+                    <ChevronDown className="h-5.5 w-5.5 stroke-[2.5]" />
                   </button>
                 </div>
               ) : (
                 // Expanded State
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
-                    <span className="font-extrabold text-xs text-white/90 uppercase tracking-wider flex items-center gap-1.5" style={getStyle(14)}>
-                      {appTheme === "light" ? <Sun className="h-4 w-4 text-amber-400" /> : <Moon className="h-4 w-4 text-indigo-300" />}
+                    <span className={cn("font-black text-xs uppercase tracking-wider flex items-center gap-1.5", 
+                      appTheme === "light" ? "text-slate-800" : "text-white/90"
+                    )} style={getStyle(14)}>
+                      {appTheme === "light" ? <Sun className="h-4.5 w-4.5 text-amber-500" /> : <Moon className="h-4.5 w-4.5 text-indigo-300" />}
                       <span>{t("profile.settings")}</span>
                     </span>
                     <button
                       onClick={() => setHeaderExpanded(false)}
-                      className="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-all cursor-pointer flex items-center justify-center border border-white/10"
+                      className={cn(
+                        "p-2 rounded-lg transition-all cursor-pointer flex items-center justify-center border min-w-[44px] min-h-[44px]", 
+                        appTheme === "light" 
+                          ? "text-slate-700 border-slate-300 bg-slate-100 hover:bg-slate-200" 
+                          : "text-white/80 hover:text-white hover:bg-white/10 border-white/10 bg-white/5"
+                      )}
                       title="Collapse settings"
                     >
-                      <ChevronUp className="h-5 w-5 stroke-[2.5]" />
+                      <ChevronUp className="h-5.5 w-5.5 stroke-[2.5]" />
                     </button>
                   </div>
 
                   {/* Font Size Selector Row (75% to 150%) */}
-                  <div className="flex justify-between items-center bg-black/15 p-2 rounded-lg border border-white/5">
-                    <span className="font-extrabold text-[11px] tracking-wider uppercase opacity-95 flex items-center gap-1.5" style={getStyle(14)}>
+                  <div className={cn("flex justify-between items-center p-2 rounded-lg border transition-all duration-300", 
+                    appTheme === "light" 
+                      ? "bg-slate-100 border-slate-200" 
+                      : "bg-black/15 border-white/5"
+                  )}>
+                    <span className={cn("font-black text-[11px] tracking-wider uppercase flex items-center gap-1.5", 
+                      appTheme === "light" ? "text-slate-700" : "text-white/95"
+                    )} style={getStyle(14)}>
                       <span className="text-base font-bold font-sans">A</span> {t("mobile.fontScale")}
                     </span>
-                    <div className="flex items-center bg-black/35 rounded-lg p-0.5 border border-white/5">
+                    <div className={cn("flex items-center rounded-lg p-0.5 border transition-all duration-300", 
+                      appTheme === "light" ? "bg-white border-slate-300" : "bg-black/35 border-white/5"
+                    )}>
                       <button 
                         onClick={() => {
                           setFontScale(prev => Math.max(0.75, prev - 0.15));
                         }}
-                        className="p-2 rounded-md text-white/80 hover:text-white hover:bg-white/10 transition-all cursor-pointer flex items-center justify-center"
+                        className={cn("p-2 rounded-md transition-all cursor-pointer flex items-center justify-center min-w-[40px] min-h-[40px]", 
+                          appTheme === "light" 
+                            ? "text-slate-700 hover:text-slate-900 hover:bg-slate-100" 
+                            : "text-white/80 hover:text-white hover:bg-white/10"
+                        )}
                         title="Smaller Text"
                       >
                         <Minus className="h-4.5 w-4.5 stroke-[2.5]" />
                       </button>
-                      <span className="px-3 font-black font-sans text-xs min-w-[45px] text-center" style={getStyle(14)}>{Math.round(fontScale * 100)}%</span>
+                      <span className={cn("px-3 font-black font-sans text-xs min-w-[50px] text-center", 
+                        appTheme === "light" ? "text-slate-800" : "text-white"
+                      )} style={getStyle(14)}>{Math.round(fontScale * 100)}%</span>
                       <button 
                         onClick={() => {
                           setFontScale(prev => Math.min(1.5, prev + 0.15));
                         }}
-                        className="p-2 rounded-md text-white/80 hover:text-white hover:bg-white/10 transition-all cursor-pointer flex items-center justify-center"
+                        className={cn("p-2 rounded-md transition-all cursor-pointer flex items-center justify-center min-w-[40px] min-h-[40px]", 
+                          appTheme === "light" 
+                            ? "text-slate-700 hover:text-slate-900 hover:bg-slate-100" 
+                            : "text-white/80 hover:text-white hover:bg-white/10"
+                        )}
                         title="Larger Text"
                       >
                         <Plus className="h-4.5 w-4.5 stroke-[2.5]" />
@@ -607,17 +695,27 @@ function PatientMobilePage() {
                   </div>
 
                   {/* App Theme Selector Row */}
-                  <div className="flex justify-between items-center bg-black/15 p-2 rounded-lg border border-white/5">
-                    <span className="font-extrabold text-[11px] tracking-wider uppercase opacity-95 flex items-center gap-1.5" style={getStyle(14)}>
-                      {appTheme === "light" ? <Sun className="h-4.5 w-4.5 text-amber-400" /> : <Moon className="h-4.5 w-4.5 text-indigo-300" />}
+                  <div className={cn("flex justify-between items-center p-2 rounded-lg border transition-all duration-300", 
+                    appTheme === "light" 
+                      ? "bg-slate-100 border-slate-200" 
+                      : "bg-black/15 border-white/5"
+                  )}>
+                    <span className={cn("font-black text-[11px] tracking-wider uppercase flex items-center gap-1.5", 
+                      appTheme === "light" ? "text-slate-700" : "text-white/95"
+                    )} style={getStyle(14)}>
+                      {appTheme === "light" ? <Sun className="h-4.5 w-4.5 text-amber-500" /> : <Moon className="h-4.5 w-4.5 text-indigo-300" />}
                       <span>{t("mobile.theme")}</span>
                     </span>
-                    <div className="grid grid-cols-2 bg-black/35 rounded-lg p-0.5 w-full max-w-[210px] border border-white/5 font-bold">
+                    <div className={cn("grid grid-cols-2 rounded-lg p-0.5 w-full max-w-[210px] border transition-all duration-300 font-bold", 
+                      appTheme === "light" ? "bg-white border-slate-350" : "bg-black/35 border-white/5"
+                    )}>
                       <button 
                         onClick={() => setAppTheme("light")}
                         className={cn(
-                          "py-2 rounded-md text-xs transition-all cursor-pointer text-center flex items-center justify-center gap-1.5", 
-                          appTheme === "light" ? "bg-white text-orange-600 font-black shadow-sm" : "text-white/75 hover:text-white"
+                          "py-2.5 rounded-md text-xs transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 min-w-[44px]", 
+                          appTheme === "light" 
+                            ? "bg-amber-600 text-white font-black shadow-md" 
+                            : "text-white/75 hover:text-white"
                         )}
                         style={getStyle(14)}
                       >
@@ -627,8 +725,10 @@ function PatientMobilePage() {
                       <button 
                         onClick={() => setAppTheme("dark")}
                         className={cn(
-                          "py-2 rounded-md text-xs transition-all cursor-pointer text-center flex items-center justify-center gap-1.5", 
-                          appTheme === "dark" ? "bg-white text-slate-900 font-black shadow-sm" : "text-white/75 hover:text-white"
+                          "py-2.5 rounded-md text-xs transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 min-w-[44px]", 
+                          appTheme === "dark" 
+                            ? "bg-amber-500 text-slate-950 font-black shadow-md" 
+                            : "text-slate-700 hover:text-slate-900"
                         )}
                         style={getStyle(14)}
                       >
@@ -639,17 +739,27 @@ function PatientMobilePage() {
                   </div>
 
                   {/* Language Selector Row */}
-                  <div className="flex justify-between items-center bg-black/15 p-2 rounded-lg border border-white/5">
-                    <span className="font-extrabold text-[11px] tracking-wider uppercase opacity-95 flex items-center gap-1.5" style={getStyle(14)}>
-                      <Globe className="h-4.5 w-4.5 text-emerald-400" />
+                  <div className={cn("flex justify-between items-center p-2 rounded-lg border transition-all duration-300", 
+                    appTheme === "light" 
+                      ? "bg-slate-100 border-slate-200" 
+                      : "bg-black/15 border-white/5"
+                  )}>
+                    <span className={cn("font-black text-[11px] tracking-wider uppercase flex items-center gap-1.5", 
+                      appTheme === "light" ? "text-slate-700" : "text-white/95"
+                    )} style={getStyle(14)}>
+                      <Globe className="h-4.5 w-4.5 text-emerald-500" />
                       <span>{lang === "th" ? "ภาษา" : "Language"}</span>
                     </span>
-                    <div className="grid grid-cols-2 bg-black/35 rounded-lg p-0.5 w-full max-w-[210px] border border-white/5 font-bold">
+                    <div className={cn("grid grid-cols-2 rounded-lg p-0.5 w-full max-w-[210px] border transition-all duration-300 font-bold", 
+                      appTheme === "light" ? "bg-white border-slate-350" : "bg-black/35 border-white/5"
+                    )}>
                       <button 
                         onClick={() => setLang("th")}
                         className={cn(
-                          "py-2 rounded-md text-xs transition-all cursor-pointer text-center flex items-center justify-center gap-1.5", 
-                          lang === "th" ? "bg-white text-emerald-600 font-black shadow-sm" : "text-white/75 hover:text-white"
+                          "py-2.5 rounded-md text-xs transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 min-w-[44px]", 
+                          lang === "th" 
+                            ? "bg-emerald-600 text-white font-black shadow-md" 
+                            : (appTheme === "light" ? "text-slate-700 hover:text-slate-900" : "text-white/75 hover:text-white")
                         )}
                         style={getStyle(14)}
                       >
@@ -658,8 +768,10 @@ function PatientMobilePage() {
                       <button 
                         onClick={() => setLang("en")}
                         className={cn(
-                          "py-2 rounded-md text-xs transition-all cursor-pointer text-center flex items-center justify-center gap-1.5", 
-                          lang === "en" ? "bg-white text-slate-900 font-black shadow-sm" : "text-white/75 hover:text-white"
+                          "py-2.5 rounded-md text-xs transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 min-w-[44px]", 
+                          lang === "en" 
+                            ? (appTheme === "light" ? "bg-slate-800 text-white font-black shadow-md" : "bg-slate-700 text-white font-black shadow-md")
+                            : (appTheme === "light" ? "text-slate-700 hover:text-slate-900" : "text-white/75 hover:text-white")
                         )}
                         style={getStyle(14)}
                       >
@@ -699,7 +811,7 @@ function PatientMobilePage() {
           {/* Simplified Risk Alert Screen (Only 2 buttons when isRisk is true) */}
           {/* ============================================================== */}
           {isRisk ? (
-            <div className="flex-1 p-6 flex flex-col justify-center gap-6 overflow-y-auto pb-40">
+            <div className="flex-1 p-6 flex flex-col justify-start pt-8 gap-6 overflow-y-auto pb-40">
               <div className="text-center space-y-2">
                 <div className="inline-block p-4 bg-red-100 dark:bg-red-950 rounded-full border border-red-500/20 text-red-600 dark:text-red-400 animate-pulse">
                   <AlertTriangle className="h-10 w-10 stroke-[2.5]" />
@@ -763,21 +875,52 @@ function PatientMobilePage() {
                     </div>
                   )}
 
-                  {/* Listen to Summary Button */}
+                  {/* Status Summary Button */}
                   <button 
                     onClick={handleReadSummary}
-                    className={cn("w-full p-4.5 rounded-xl border flex items-center gap-4 transition-colors hover:bg-slate-50/10 shadow-none cursor-pointer", themeStyles.cardBg)}
+                    className={cn("w-full p-4.5 rounded-xl border flex items-center gap-4 transition-colors hover:bg-slate-50/10 shadow-none cursor-pointer text-left", themeStyles.cardBg)}
                   >
                     <div className="h-12 w-12 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0">
-                      <Volume2 className="h-6 w-6 text-emerald-500 stroke-[2.5]" />
+                      <FileText className="h-6 w-6 text-emerald-500 stroke-[2.5]" />
                     </div>
                     <div className="leading-tight text-left flex-1">
                       <h2 className="font-black" style={getStyle(24)}>
-                        {lang === "th" ? "ฟังคำสรุปสถานะ" : "Listen to Status Summary"}
+                        {lang === "th" ? "สรุปสถานะของคุณ" : "Your Status Summary"}
                       </h2>
-                      <p className="opacity-75 mt-0.5 font-semibold" style={getStyle(18)}>
-                        {lang === "th" ? "กดเพื่อฟังเสียงสรุปความปลอดภัยของคุณครับ" : "Press to listen to your health & safety status."}
-                      </p>
+                      <div className="mt-1 flex flex-col gap-1.5 text-slate-500 dark:text-slate-400">
+                        <span className="font-semibold flex items-center gap-2" style={getStyle(16)}>
+                          {riskCount > 0 ? (
+                            <AlertTriangle className="h-4.5 w-4.5 text-red-500 shrink-0" />
+                          ) : (
+                            <ShieldCheck className="h-4.5 w-4.5 text-emerald-500 shrink-0" />
+                          )}
+                          <span>
+                            {lang === "th" 
+                              ? (riskCount > 0 
+                                  ? `วันนี้พบความเสี่ยงล้ม: ${riskCount} ครั้ง${latestTimeStr ? ` (ล่าสุด ${latestTimeStr})` : ""}` 
+                                  : "วันนี้ไม่พบประวัติการหกล้มครับ")
+                              : (riskCount > 0 
+                                  ? `Fall risk detected today: ${riskCount} time(s)${latestTimeStr ? ` (latest at ${latestTimeStr})` : ""}` 
+                                  : "No fall risk detected today")}
+                          </span>
+                        </span>
+                        <span className="font-semibold flex items-center gap-2" style={getStyle(16)}>
+                          {isDeviceNotWorn ? (
+                            <ZapOff className="h-4.5 w-4.5 text-amber-500 shrink-0" />
+                          ) : (
+                            <ShieldCheck className="h-4.5 w-4.5 text-emerald-500 shrink-0" />
+                          )}
+                          <span>
+                            {lang === "th"
+                              ? (isDeviceNotWorn 
+                                  ? "การเชื่อมต่อ: อุปกรณ์หลุดหรือสวมใส่ไม่กระชับครับ" 
+                                  : "การเชื่อมต่อ: อุปกรณ์สวมใส่ปกติและเชื่อมต่อแนบสนิทครับ")
+                              : (isDeviceNotWorn 
+                                  ? "Connection: Device is loose or detached" 
+                                  : "Connection: Wearable is connected and secure")}
+                          </span>
+                        </span>
+                      </div>
                     </div>
                   </button>
 
@@ -817,7 +960,7 @@ function PatientMobilePage() {
                     <div className={cn("p-5 rounded-[12px] border text-center relative shadow-none w-full", themeStyles.cardBg)}>
                       <span className="font-black uppercase text-amber-600 block" style={getStyle(18)}>{t("mobile.kpi.riskEvents")}</span>
                       <span className="font-black block mt-2 text-amber-650" style={getStyle(24)}>
-                        {activeLogs.filter(l => l.event_type === "Predicted Risk").length}
+                        {activeTodayLogs.filter(l => l.event_type === "Predicted Risk").length}
                       </span>
                       <span className="font-bold text-slate-500 block mt-1" style={getStyle(18)}>
                         {lang === "th" ? "ครั้ง" : "times"}
@@ -828,12 +971,12 @@ function PatientMobilePage() {
                   {/* Simplified Logs List */}
                   <div className="space-y-3 mt-2">
                     <h3 className="font-black uppercase tracking-wider text-slate-400 text-left" style={getStyle(18)}>{t("mobile.logs.title")}</h3>
-                    {activeLogs.filter(l => l.event_type !== "SOS Button Pressed").length === 0 ? (
+                    {activeTodayLogs.filter(l => l.event_type !== "SOS Button Pressed").length === 0 ? (
                       <div className={cn("p-6 rounded-[12px] border text-center font-semibold shadow-none", themeStyles.cardBg)} style={getStyle(18)}>
                         {t("mobile.logs.empty")}
                       </div>
                     ) : (
-                      activeLogs
+                      activeTodayLogs
                         .filter(l => l.event_type !== "SOS Button Pressed")
                         .slice(0, 5)
                         .map((l, i) => (
@@ -870,7 +1013,6 @@ function PatientMobilePage() {
                     <ProfileItem label={t("mobile.profile.name")} value={lang === "th" ? `คุณ${activePatient.name}` : activePatient.name} themeStyles={themeStyles} getStyle={getStyle} />
                     <ProfileItem label={t("mobile.profile.age")} value={t("patient.telemetry.ageVal").replace("{age}", String(activePatient.age))} themeStyles={themeStyles} getStyle={getStyle} />
                     <ProfileItem label={t("mobile.profile.room")} value={activePatient.room || "-"} themeStyles={themeStyles} getStyle={getStyle} />
-                    <ProfileItem label={t("mobile.profile.medical")} value={activePatient.treatment_history || t("mobile.profile.medicalNone")} themeStyles={themeStyles} getStyle={getStyle} />
                     <ProfileItem label={t("mobile.profile.device")} value={activePatient.device_id || t("mobile.profile.deviceNone")} themeStyles={themeStyles} getStyle={getStyle} />
                   </div>
                 </div>
@@ -881,14 +1023,23 @@ function PatientMobilePage() {
 
 
 
-          {/* R10: BOTTOM NAVIGATION BAR (Gold border, Labels + Icons) */}
-          <div className="absolute bottom-0 inset-x-0 bg-white border-t border-[#F5D547] pt-2 pb-6 px-2 flex justify-between items-center text-slate-400 z-10 shrink-0 rounded-t-xl shadow-none">
+          {/* R10: BOTTOM NAVIGATION BAR (Tactile Pill Buttons, Tone Adaptive) */}
+          <div className={cn("absolute bottom-0 inset-x-0 border-t pt-3 pb-7 px-4 flex justify-between items-center gap-3 z-10 shrink-0 rounded-t-2xl shadow-[0_-4px_20px_rgba(0,0,0,0.08)] transition-all duration-300", 
+            appTheme === "light" 
+              ? "bg-white border-slate-200" 
+              : "bg-slate-900 border-slate-800"
+          )}>
             <div className="flex items-center justify-center flex-1">
               <button 
                 onClick={() => setActiveTab("home")}
-                className={cn("flex flex-col items-center gap-1 text-[10px] font-black transition-colors cursor-pointer", activeTab === "home" ? "text-[#D97706]" : "text-slate-400")}
+                className={cn(
+                  "w-full py-2.5 px-2 rounded-xl flex flex-col items-center gap-1.5 text-xs font-black transition-all border cursor-pointer select-none",
+                  activeTab === "home"
+                    ? (appTheme === "light" ? "bg-amber-600 text-white border-amber-700 shadow-md transform scale-[1.02]" : "bg-amber-500 text-slate-950 border-amber-400 font-extrabold shadow-md transform scale-[1.02]")
+                    : (appTheme === "light" ? "bg-slate-50 hover:bg-slate-100 hover:border-slate-350 text-slate-655 border-slate-200/60" : "bg-slate-850 hover:bg-slate-800 hover:border-slate-700 text-slate-300 border-slate-800")
+                )}
               >
-                <Home className="h-5.5 w-5.5" />
+                <Home className="h-5.5 w-5.5 shrink-0" />
                 <span style={getStyle(18)}>{t("mobile.nav.home")}</span>
               </button>
             </div>
@@ -896,9 +1047,14 @@ function PatientMobilePage() {
             <div className="flex items-center justify-center flex-1">
               <button 
                 onClick={() => setActiveTab("logs")}
-                className={cn("flex flex-col items-center gap-1 text-[10px] font-black transition-colors cursor-pointer", activeTab === "logs" ? "text-[#D97706]" : "text-slate-400")}
+                className={cn(
+                  "w-full py-2.5 px-2 rounded-xl flex flex-col items-center gap-1.5 text-xs font-black transition-all border cursor-pointer select-none",
+                  activeTab === "logs"
+                    ? (appTheme === "light" ? "bg-amber-600 text-white border-amber-700 shadow-md transform scale-[1.02]" : "bg-amber-500 text-slate-950 border-amber-400 font-extrabold shadow-md transform scale-[1.02]")
+                    : (appTheme === "light" ? "bg-slate-50 hover:bg-slate-100 hover:border-slate-350 text-slate-655 border-slate-200/60" : "bg-slate-850 hover:bg-slate-800 hover:border-slate-700 text-slate-300 border-slate-800")
+                )}
               >
-                <FileClock className="h-5.5 w-5.5" />
+                <FileClock className="h-5.5 w-5.5 shrink-0" />
                 <span style={getStyle(18)}>{t("mobile.nav.logs")}</span>
               </button>
             </div>
@@ -906,9 +1062,14 @@ function PatientMobilePage() {
             <div className="flex items-center justify-center flex-1">
               <button 
                 onClick={() => setActiveTab("profile")}
-                className={cn("flex flex-col items-center gap-1 text-[10px] font-black transition-colors cursor-pointer", activeTab === "profile" ? "text-[#D97706]" : "text-slate-400")}
+                className={cn(
+                  "w-full py-2.5 px-2 rounded-xl flex flex-col items-center gap-1.5 text-xs font-black transition-all border cursor-pointer select-none",
+                  activeTab === "profile"
+                    ? (appTheme === "light" ? "bg-amber-600 text-white border-amber-700 shadow-md transform scale-[1.02]" : "bg-amber-500 text-slate-950 border-amber-400 font-extrabold shadow-md transform scale-[1.02]")
+                    : (appTheme === "light" ? "bg-slate-50 hover:bg-slate-100 hover:border-slate-350 text-slate-655 border-slate-200/60" : "bg-slate-850 hover:bg-slate-800 hover:border-slate-700 text-slate-300 border-slate-800")
+                )}
               >
-                <User className="h-5.5 w-5.5" />
+                <User className="h-5.5 w-5.5 shrink-0" />
                 <span style={getStyle(18)}>{t("mobile.nav.profile")}</span>
               </button>
             </div>
@@ -926,11 +1087,10 @@ function PatientMobilePage() {
           <div className={cn("w-full max-w-sm p-6 rounded-xl border flex flex-col gap-4 text-center shadow-none", themeStyles.cardBg)}>
             <div className="flex justify-between items-center border-b pb-2">
               <span className="font-black uppercase tracking-wider text-emerald-500 flex items-center gap-1.5" style={getStyle(18)}>
-                <Volume2 className="h-5 w-5" /> {summaryTitle}
+                <FileText className="h-5 w-5" /> {summaryTitle}
               </span>
               <button 
                 onClick={() => {
-                  if (typeof window !== "undefined") window.speechSynthesis.cancel();
                   setSummaryOpen(false);
                 }}
                 className="p-1 rounded-md text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-all cursor-pointer"
@@ -940,16 +1100,26 @@ function PatientMobilePage() {
             </div>
             
             <div className="space-y-3 my-2 text-left">
-              {summaryList.map((item, idx) => (
-                <div key={idx} className={cn("p-3 rounded-lg border", themeStyles.pillBg)} style={getStyle(16)}>
-                  {item}
-                </div>
-              ))}
+              {summaryList.map((item: any, idx) => {
+                let iconEl = <ShieldCheck className="h-5 w-5 text-emerald-500 shrink-0" />;
+                if (item.icon === "risk") {
+                  iconEl = <AlertTriangle className="h-5 w-5 text-red-500 shrink-0" />;
+                } else if (item.icon === "warn") {
+                  iconEl = <ZapOff className="h-5 w-5 text-amber-500 shrink-0" />;
+                } else if (item.icon === "conn") {
+                  iconEl = <ShieldCheck className="h-5 w-5 text-emerald-500 shrink-0" />;
+                }
+                return (
+                  <div key={idx} className={cn("p-3 rounded-lg border flex items-start gap-3", themeStyles.pillBg)} style={getStyle(16)}>
+                    {iconEl}
+                    <span className="leading-snug">{item.text}</span>
+                  </div>
+                );
+              })}
             </div>
 
             <button 
               onClick={() => {
-                if (typeof window !== "undefined") window.speechSynthesis.cancel();
                 setSummaryOpen(false);
               }}
               className="bg-emerald-600 text-white p-3 rounded-xl font-black active:scale-[0.98] transition-all hover:bg-emerald-700 w-full cursor-pointer"

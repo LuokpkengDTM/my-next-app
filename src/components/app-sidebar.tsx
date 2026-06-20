@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Activity, LayoutDashboard, Users, AlertTriangle, Settings } from "lucide-react";
+import { LayoutDashboard, Users, AlertTriangle, Settings, FileText } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -14,6 +14,8 @@ import {
 } from "@/components/ui/sidebar";
 import { useT } from "@/lib/settings-context";
 
+import { PixelHeart } from "@/components/ui/pixel-heart";
+
 export function AppSidebar() {
   const t = useT();
   const currentPath = useRouterState({ select: (r) => r.location.pathname });
@@ -23,6 +25,7 @@ export function AppSidebar() {
     { title: t("nav.dashboard"), url: "/", icon: LayoutDashboard },
     { title: t("nav.patients"), url: "/patients", icon: Users },
     { title: t("nav.anomalies"), url: "/anomalies", icon: AlertTriangle },
+    { title: t("nav.projectInfo"), url: "/project", icon: FileText },
   ];
 
   return (
@@ -30,7 +33,7 @@ export function AppSidebar() {
       <SidebarHeader className="border-b">
         <div className="flex items-center gap-2.5 px-3 py-4 select-none group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20 transition-all duration-300 hover:scale-105">
-            <Activity className="h-5 w-5 animate-pulse" style={{ animationDuration: '2.5s' }} />
+            <PixelHeart size={22} className="animate-pulse" style={{ animationDuration: '2.5s' }} pixelColor="#FFF56D" />
           </div>
           <div className="flex flex-col group-data-[collapsible=icon]:hidden">
             <span className="text-sm font-bold tracking-wide bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text text-transparent">{t("app.name")}</span>

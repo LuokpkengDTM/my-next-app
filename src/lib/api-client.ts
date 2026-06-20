@@ -1,6 +1,85 @@
 // API Client for SentinelCare - connects frontend to FastAPI backend
+import { 
+  patients as mockPatients, 
+  anomalyLogs as mockAnomalyLogs,
+  dailyRiskData,
+  weeklyRiskData,
+  monthlyRiskData,
+  yearlyRiskData
+} from "./mock-data";
 
 const API_URL = import.meta.env.VITE_PUBLIC_API_URL || "http://localhost:8000";
+
+// Helper for local state in Guest Mode
+const getGuestData = () => {
+  if (typeof window === "undefined") return { patients: mockPatients, anomalies: mockAnomalyLogs };
+  
+  let localP = localStorage.getItem("guest-patients");
+  let localA = localStorage.getItem("guest-anomalies");
+  
+  if (!localP) {
+    localStorage.setItem("guest-patients", JSON.stringify(mockPatients));
+    localP = JSON.stringify(mockPatients);
+  }
+  if (!localA) {
+    localStorage.setItem("guest-anomalies", JSON.stringify(mockAnomalyLogs));
+    localA = JSON.stringify(mockAnomalyLogs);
+  }
+  
+  return {
+    patients: JSON.parse(localP),
+    anomalies: JSON.parse(localA)
+  };
+};
+
+const saveGuestPatients = (pList: any[]) => {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("guest-patients", JSON.stringify(pList));
+  }
+};
+
+const saveGuestAnomalies = (aList: any[]) => {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("guest-anomalies", JSON.stringify(aList));
+  }
+};
+
+let fallTimerStarted = false;
+const startFallTimer = () => {
+  if (fallTimerStarted || typeof window === "undefined") return;
+  fallTimerStarted = true;
+  
+  setTimeout(() => {
+    const { patients: curP, anomalies: curA } = getGuestData();
+    const targetIdx = curP.findIndex((p: any) => p.id === "p4");
+    if (targetIdx !== -1 && curP[targetIdx].status !== "risk") {
+      // Set status to risk
+      curP[targetIdx].status = "risk";
+      curP[targetIdx].lastUpdate = "now";
+      saveGuestPatients(curP);
+      
+      // Create anomaly log
+      const newAnomaly = {
+        id: `a_simulated_${Date.now()}`,
+        patientId: "p4",
+        patientName: "นายประหยัด โชคดี",
+        date: new Date().toISOString(),
+        type: "Predicted Fall Risk" as const,
+        accel: 2.85,
+        gyro: 145.2,
+        severity: "high" as const
+      };
+      
+      curA.unshift(newAnomaly);
+      saveGuestAnomalies(curA);
+      
+      // Dispatch custom event for telemetry status updates
+      console.log("⚠️ SIMULATED FALL EVENT TRIGGERED FOR P4!");
+      window.dispatchEvent(new Event("guest-fall-triggered"));
+    }
+  }, 10000); // 10 seconds
+};
+
 
 export const getToken = (): string | null => {
   if (typeof window !== "undefined") {
@@ -57,6 +136,10 @@ export const authFetch = async (endpoint: string, options: RequestInit = {}) => 
 // API Functions
 export const api = {
   login: async (username: string, password: string) => {
+    if (username === "demo" || username === "Guest Caregiver") {
+      setToken("guest-demo-token", "Guest Caregiver");
+      return { access_token: "guest-demo-token" };
+    }
     const formData = new URLSearchParams();
     formData.append("username", username);
     formData.append("password", password);
@@ -86,12 +169,36 @@ export const api = {
   },
 
   getPatients: async () => {
+    if (getToken() === "guest-demo-token") {
+      startFallTimer();
+      const { patients } = getGuestData();
+      return patients;
+    }
     const res = await authFetch("/api/patients");
     if (!res.ok) throw new Error("Failed to fetch patients");
     return res.json();
   },
 
   createPatient: async (patient: any) => {
+    if (getToken() === "guest-demo-token") {
+      const { patients } = getGuestData();
+      const newP = {
+        id: `p_${Date.now()}`,
+        name: patient.name,
+        age: Number(patient.age) || 75,
+        gender: patient.gender || "Male",
+        weight: Number(patient.weight) || 60,
+        height: Number(patient.height) || 165,
+        deviceId: patient.device_id || "",
+        status: "normal" as const,
+        room: patient.room || "Room 01A",
+        lastUpdate: "now",
+        avatarSeed: patient.name
+      };
+      patients.push(newP);
+      saveGuestPatients(patients);
+      return newP;
+    }
     const res = await authFetch("/api/patients", {
       method: "POST",
       headers: {
@@ -104,6 +211,16 @@ export const api = {
   },
 
   updatePatient: async (id: string, patient: any) => {
+    if (getToken() === "guest-demo-token") {
+      const { patients } = getGuestData();
+      const idx = patients.findIndex((p: any) => p.id === id);
+      if (idx !== -1) {
+        patients[idx] = { ...patients[idx], ...patient, deviceId: patient.device_id || patients[idx].deviceId };
+        saveGuestPatients(patients);
+        return patients[idx];
+      }
+      throw new Error("Patient not found");
+    }
     const res = await authFetch(`/api/patients/${id}`, {
       method: "PUT",
       headers: {
@@ -116,6 +233,12 @@ export const api = {
   },
 
   deletePatient: async (id: string) => {
+    if (getToken() === "guest-demo-token") {
+      const { patients } = getGuestData();
+      const filtered = patients.filter((p: any) => p.id !== id);
+      saveGuestPatients(filtered);
+      return { status: "success" };
+    }
     const res = await authFetch(`/api/patients/${id}`, {
       method: "DELETE",
     });
@@ -124,30 +247,72 @@ export const api = {
   },
 
   getSensorData: async () => {
+    if (getToken() === "guest-demo-token") {
+      const { patients } = getGuestData();
+      const data: Record<string, any> = {};
+      patients.forEach((p: any) => {
+        if (p.deviceId) {
+          const hr = Math.round(72 + Math.sin(Date.now() / 5000) * 8 + (p.status === "risk" ? 25 : 0));
+          data[p.deviceId] = {
+            device_id: p.deviceId,
+            status: "Connected",
+            risk_label: p.status === "risk" ? "Risk" : "Normal",
+            heart_rate: hr,
+            skin_contact: true,
+            accel_x: +(Math.sin(Date.now() / 1000) * 0.2 + (p.status === "risk" ? 2.5 : 0)).toFixed(2),
+            accel_y: +(Math.cos(Date.now() / 1200) * 0.15 + (p.status === "risk" ? -1.8 : 0.9)).toFixed(2),
+            accel_z: +(Math.sin(Date.now() / 1500) * 0.1 + (p.status === "risk" ? 1.2 : -0.2)).toFixed(2),
+            timestamp: new Date().toISOString()
+          };
+        }
+      });
+      return data;
+    }
     const res = await authFetch("/api/data");
     if (!res.ok) throw new Error("Failed to fetch sensor data");
     return res.json();
   },
 
   getAnomalies: async () => {
+    if (getToken() === "guest-demo-token") {
+      const { anomalies } = getGuestData();
+      return anomalies;
+    }
     const res = await authFetch("/api/anomalies");
     if (!res.ok) throw new Error("Failed to fetch anomalies");
     return res.json();
   },
 
   getRiskTrends: async () => {
+    if (getToken() === "guest-demo-token") {
+      return {
+        daily: dailyRiskData,
+        weekly: weeklyRiskData,
+        monthly: monthlyRiskData,
+        yearly: yearlyRiskData
+      };
+    }
     const res = await authFetch("/api/risk_trends");
     if (!res.ok) throw new Error("Failed to fetch risk trends");
     return res.json();
   },
 
   getProfile: async () => {
+    if (getToken() === "guest-demo-token") {
+      return {
+        email: "demo-caregiver@fallguard.ai",
+        phone: "081-234-5678"
+      };
+    }
     const res = await authFetch("/api/admin/profile");
     if (!res.ok) throw new Error("Failed to fetch admin profile");
     return res.json();
   },
 
   updateProfile: async (profile: { email: string; phone: string }) => {
+    if (getToken() === "guest-demo-token") {
+      return profile;
+    }
     const res = await authFetch("/api/admin/profile", {
       method: "PUT",
       headers: {
@@ -160,6 +325,9 @@ export const api = {
   },
 
   sendPatientMessage: async (id: string, message: string) => {
+    if (getToken() === "guest-demo-token") {
+      return { status: "success" };
+    }
     const res = await authFetch(`/api/patients/${id}/message`, {
       method: "PUT",
       headers: {
@@ -172,6 +340,17 @@ export const api = {
   },
 
   updatePatientStatus: async (id: string, status: string, impact: number = 0.0, confidence: string = "0") => {
+    if (getToken() === "guest-demo-token") {
+      const { patients } = getGuestData();
+      const idx = patients.findIndex((p: any) => p.id === id);
+      if (idx !== -1) {
+        patients[idx].status = status;
+        patients[idx].lastUpdate = "now";
+        saveGuestPatients(patients);
+        return patients[idx];
+      }
+      throw new Error("Patient not found");
+    }
     const res = await authFetch(`/api/patients/${id}/status`, {
       method: "PUT",
       headers: {
@@ -184,6 +363,30 @@ export const api = {
   },
 
   triggerSOS: async (id: string) => {
+    if (getToken() === "guest-demo-token") {
+      const { patients, anomalies } = getGuestData();
+      const idx = patients.findIndex((p: any) => p.id === id);
+      if (idx !== -1) {
+        patients[idx].status = "risk";
+        patients[idx].lastUpdate = "now";
+        saveGuestPatients(patients);
+
+        const log = {
+          id: `a_sos_${Date.now()}`,
+          patientId: id,
+          patientName: patients[idx].name,
+          date: new Date().toISOString(),
+          type: "Predicted Fall Risk" as const,
+          accel: 3.12,
+          gyro: 189.5,
+          severity: "high" as const
+        };
+        anomalies.unshift(log);
+        saveGuestAnomalies(anomalies);
+        return patients[idx];
+      }
+      throw new Error("Patient not found");
+    }
     const res = await authFetch(`/api/patients/${id}/sos`, {
       method: "POST",
     });
@@ -272,10 +475,44 @@ export const api = {
   },
 
   connectPatientWS: (id: string, onMessage: (data: any) => void) => {
-    // Convert http:// or https:// to ws:// or wss://
+    if (getToken() === "guest-demo-token") {
+      console.log("🔌 Connecting MOCK WebSocket for patient:", id);
+      let active = true;
+      const interval = setInterval(() => {
+        if (!active) return;
+        const { patients } = getGuestData();
+        const p = patients.find((p: any) => p.id === id);
+        const isRisk = p?.status === "risk";
+        
+        const time = Date.now();
+        const heart_rate = Math.round(72 + Math.sin(time / 4000) * 5 + (isRisk ? 28 : 0));
+        const accel_x = +(Math.sin(time / 800) * 0.15 + (isRisk ? 2.4 * Math.sin(time / 100) : 0)).toFixed(2);
+        const accel_y = +(Math.cos(time / 900) * 0.1 + (isRisk ? -1.5 * Math.cos(time / 100) : 0.8)).toFixed(2);
+        const accel_z = +(Math.sin(time / 1100) * 0.08 + (isRisk ? 1.1 * Math.sin(time / 100) : -0.25)).toFixed(2);
+        
+        onMessage({
+          device_id: p?.deviceId || "MOCK-DEV",
+          status: "Connected",
+          heart_rate,
+          skin_contact: true,
+          accel_x,
+          accel_y,
+          accel_z,
+          timestamp: new Date().toISOString(),
+          risk_label: isRisk ? "Risk" : "Normal"
+        });
+      }, 100);
+
+      return {
+        close: () => {
+          console.log("🔌 Closing MOCK WebSocket for patient:", id);
+          active = false;
+          clearInterval(interval);
+        }
+      } as any;
+    }
+
     let wsBase = API_URL.replace(/^http/, "ws");
-    
-    // If API_URL is relative or doesn't have protocol, fallback to window.location
     if (!API_URL.startsWith("http")) {
       if (typeof window !== "undefined") {
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";

@@ -7,7 +7,7 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, useRef, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { SettingsProvider, useSettings, useT } from "@/lib/settings-context";
 import { SettingsControls } from "@/components/settings-controls";
 import { LoginView } from "@/components/login-view";
+import { ProjectPage } from "./project";
 import { api, clearToken } from "@/lib/api-client";
 import {
   DropdownMenu,
@@ -100,20 +101,89 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
 }
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
-  head: () => ({
-    meta: [
-      { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Fall Guard — AI Fall Risk Monitoring" },
-      { name: "description", content: "Real-time AI-powered fall risk monitoring dashboard for caregivers." },
-    ],
-    links: [
-      { rel: "stylesheet", href: appCss },
-      { rel: "preconnect", href: "https://fonts.googleapis.com" },
-      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
-      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700;800&display=swap" },
-    ],
-  }),
+  head: () => {
+    // Symmetrical 17x17 pixel art layout (center column is 8)
+    const pixels = [
+      // === OUTER BORDER ===
+      // Top humps (y=2)
+      { x: 3, y: 2 }, { x: 4, y: 2 }, { x: 5, y: 2 },
+      { x: 11, y: 2 }, { x: 12, y: 2 }, { x: 13, y: 2 },
+      // Row 3 (y=3)
+      { x: 2, y: 3 }, { x: 6, y: 3 }, { x: 10, y: 3 }, { x: 14, y: 3 },
+      // Row 4 (y=4)
+      { x: 1, y: 4 }, { x: 7, y: 4 }, { x: 9, y: 4 }, { x: 15, y: 4 },
+      // Row 5 (y=5)
+      { x: 1, y: 5 }, { x: 8, y: 5 }, { x: 15, y: 5 },
+      // Row 6 (y=6)
+      { x: 1, y: 6 }, { x: 15, y: 6 },
+      // Row 7 (y=7)
+      { x: 1, y: 7 }, { x: 15, y: 7 },
+      // Bottom outer slope (y=8 to y=14)
+      { x: 2, y: 8 }, { x: 14, y: 8 },
+      { x: 3, y: 9 }, { x: 13, y: 9 },
+      { x: 4, y: 10 }, { x: 12, y: 10 },
+      { x: 5, y: 11 }, { x: 11, y: 11 },
+      { x: 6, y: 12 }, { x: 10, y: 12 },
+      { x: 7, y: 13 }, { x: 9, y: 13 },
+      { x: 8, y: 14 },
+
+      // === INNER BORDER (Makes outline 2-dots thick) ===
+      // Top humps inner (y=3)
+      { x: 3, y: 3 }, { x: 4, y: 3 }, { x: 5, y: 3 },
+      { x: 11, y: 3 }, { x: 12, y: 3 }, { x: 13, y: 3 },
+      // Row 4 inner (y=4)
+      { x: 2, y: 4 }, { x: 6, y: 4 }, { x: 10, y: 4 }, { x: 14, y: 4 },
+      // Row 5 inner (y=5)
+      { x: 2, y: 5 }, { x: 7, y: 5 }, { x: 9, y: 5 }, { x: 14, y: 5 },
+      // Row 6 inner (y=6)
+      { x: 2, y: 6 }, { x: 8, y: 6 }, { x: 14, y: 6 },
+      // Row 7 inner (y=7)
+      { x: 2, y: 7 }, { x: 14, y: 7 },
+      // Bottom inner slope
+      { x: 3, y: 8 }, { x: 13, y: 8 },
+      { x: 4, y: 9 }, { x: 12, y: 9 },
+      { x: 5, y: 10 }, { x: 11, y: 10 },
+      { x: 6, y: 11 }, { x: 10, y: 11 },
+      { x: 7, y: 12 }, { x: 9, y: 12 },
+      { x: 8, y: 13 },
+
+      // === SHIELD OUTLINE ===
+      { x: 6, y: 6 }, { x: 7, y: 6 }, { x: 8, y: 6 }, { x: 9, y: 6 }, { x: 10, y: 6 },
+      { x: 6, y: 7 }, { x: 10, y: 7 },
+      { x: 6, y: 8 }, { x: 10, y: 8 },
+      { x: 6, y: 9 }, { x: 10, y: 9 },
+      { x: 7, y: 10 }, { x: 9, y: 10 },
+      { x: 8, y: 11 },
+      // === SHIELD INNER CORE ===
+      { x: 8, y: 8 }, { x: 8, y: 9 },
+    ];
+
+    // Remove duplicates
+    const uniquePixels = Array.from(new Set(pixels.map((p) => `${p.x},${p.y}`)))
+      .map((str) => {
+        const [x, y] = str.split(",").map(Number);
+        return { x, y };
+      });
+
+    const svgRects = uniquePixels.map(p => `<rect x='${p.x}' y='${p.y}' width='1' height='1' fill='%23FFF56D'/>`).join("");
+    const svgDataUri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 17 17' width='32' height='32'>${svgRects}</svg>`;
+
+    return {
+      meta: [
+        { charSet: "utf-8" },
+        { name: "viewport", content: "width=device-width, initial-scale=1" },
+        { title: "Fall Guard — AI Fall Risk Monitoring" },
+        { name: "description", content: "Real-time AI-powered fall risk monitoring dashboard for caregivers." },
+      ],
+      links: [
+        { rel: "icon", type: "image/svg+xml", href: svgDataUri },
+        { rel: "stylesheet", href: appCss },
+        { rel: "preconnect", href: "https://fonts.googleapis.com" },
+        { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
+        { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700;800&display=swap" },
+      ],
+    };
+  },
   shellComponent: RootShell,
   component: RootComponent,
   notFoundComponent: NotFoundComponent,
@@ -145,6 +215,12 @@ function RootComponent() {
   const [acknowledgedAlerts, setAcknowledgedAlerts] = useState<string[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isAlertMinimized, setIsAlertMinimized] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const acknowledgedAlertsRef = useRef<string[]>([]);
+
+  useEffect(() => {
+    acknowledgedAlertsRef.current = acknowledgedAlerts;
+  }, [acknowledgedAlerts]);
 
   useEffect(() => {
     if (activeAlertPatient) {
@@ -153,6 +229,7 @@ function RootComponent() {
   }, [activeAlertPatient?.id]);
 
   const isMobileView = typeof window !== "undefined" && window.location.pathname.includes("/mobile");
+  const isPublicRoute = typeof window !== "undefined" && window.location.pathname === "/project";
 
   // Web Audio API siren alert sound
   const playAlertSound = () => {
@@ -228,7 +305,7 @@ function RootComponent() {
         const riskPatients = patientsList.filter((p: any) => p.status === "risk");
 
         // Find first risk patient who hasn't been acknowledged yet
-        const unacknowledgedPatient = riskPatients.find((p: any) => !acknowledgedAlerts.includes(p.id));
+        const unacknowledgedPatient = riskPatients.find((p: any) => !acknowledgedAlertsRef.current.includes(p.id));
 
         if (unacknowledgedPatient) {
           setActiveAlertPatient(unacknowledgedPatient);
@@ -282,7 +359,7 @@ function RootComponent() {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [token, isMobileView, acknowledgedAlerts]);
+  }, [token, isMobileView]);
 
   const handleResolveAlert = async (patientId: string) => {
     const lang = document.documentElement.lang === "th" ? "th" : "en";
@@ -345,11 +422,48 @@ function RootComponent() {
     );
   }
 
+  if (isPublicRoute && !token) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <SettingsProvider>
+          <main className="flex-1">
+            <Outlet />
+          </main>
+          <Toaster />
+        </SettingsProvider>
+      </QueryClientProvider>
+    );
+  }
+
+  const handleTryDemo = () => {
+    localStorage.setItem("token", "guest-demo-token");
+    localStorage.setItem("username", "Guest Caregiver");
+    setToken("guest-demo-token");
+    setUsername("Guest Caregiver");
+    api.getProfile().then(setProfile).catch(() => {});
+  };
+
   if (!token) {
     return (
       <QueryClientProvider client={queryClient}>
         <SettingsProvider>
-          <LoginView onLoginSuccess={handleLoginSuccess} />
+          <ProjectPage 
+            onTryDemo={handleTryDemo} 
+            onSignInClick={() => setShowLoginModal(true)} 
+          />
+          
+          <Dialog open={showLoginModal} onOpenChange={setShowLoginModal}>
+            <DialogContent className="sm:max-w-md bg-card border-border p-0 overflow-hidden shadow-2xl z-50">
+              <LoginView 
+                isModal={true} 
+                onLoginSuccess={(t, u) => {
+                  setShowLoginModal(false);
+                  handleLoginSuccess(t, u);
+                }} 
+              />
+            </DialogContent>
+          </Dialog>
+          <Toaster />
         </SettingsProvider>
       </QueryClientProvider>
     );

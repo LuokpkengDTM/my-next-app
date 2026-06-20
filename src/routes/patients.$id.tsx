@@ -8,6 +8,8 @@ import {
   Tooltip,
   XAxis,
   YAxis,
+  ReferenceDot,
+  Label as RechartsLabel,
 } from "recharts";
 import {
   ArrowLeft,
@@ -33,6 +35,8 @@ import {
   ChevronDown,
   ChevronUp,
   X,
+  Download,
+  TrendingUp,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -259,6 +263,7 @@ function PatientDetailPage() {
     if (!patient || !patient.device_id) return;
 
     let tickCount = 40;
+
     const interval = setInterval(async () => {
       if (typeof document !== "undefined" && document.visibilityState !== "visible") {
         return;
@@ -269,13 +274,15 @@ function PatientDetailPage() {
         if (myDevice) {
           setStatus(myDevice.status);
 
+          const currentSkinContact = myDevice.skin_contact !== false;
+
           if (myDevice.status === "Connected") {
             const rawRisk = myDevice.risk_label;
             const isRisk = rawRisk === "High Risk" || rawRisk === "Risk";
             setPrediction(isRisk ? "risk" : "normal");
             setAiConfidence(myDevice.confidence);
             setCurrentSVM(myDevice.acc_svm);
-            setSkinContact(myDevice.skin_contact !== false);
+            setSkinContact(currentSkinContact);
 
             const accSvm =
               typeof myDevice.acc_svm === "number"
@@ -294,9 +301,14 @@ function PatientDetailPage() {
                       (myDevice.gyro_z || 0) ** 2,
                   );
 
-            tickCount++;
-            setAccel((prev) => [...prev.slice(1), { t: tickCount, value: accSvm }]);
-            setGyro((prev) => [...prev.slice(1), { t: tickCount, value: gyroSvm }]);
+            setAccel((prev) => {
+              const next = [...prev.slice(1), { t: 39, value: accSvm }];
+              return next.map((d, index) => ({ t: index, value: d.value }));
+            });
+            setGyro((prev) => {
+              const next = [...prev.slice(1), { t: 39, value: gyroSvm }];
+              return next.map((d, index) => ({ t: index, value: d.value }));
+            });
           } else {
             setPrediction("normal");
             setAiConfidence("0");
@@ -308,7 +320,7 @@ function PatientDetailPage() {
     }, 100);
 
     return () => clearInterval(interval);
-  }, [patient]);
+  }, [patient, lang]);
 
   // Aggregate weekly stats based on patient logs
   const patientWeeklyData = useMemo(() => {
@@ -354,10 +366,111 @@ function PatientDetailPage() {
 
   const mobileUrl = useMemo(() => {
     if (!patient) return "";
+    if (typeof window !== "undefined") {
+      const hostname = window.location.hostname;
+      const isLocalhost = hostname === "localhost" || hostname === "127.0.0.1";
+      const isLocalIP = /^192\.168\./.test(hostname) || /^10\./.test(hostname) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname);
+      
+      if (!isLocalhost && !isLocalIP) {
+        // If accessed via tunnel or public domain, use the current origin
+        return `${window.location.origin}/patients/${patient.id}/mobile`;
+      }
+    }
     const host =
       serverIP || (typeof window !== "undefined" ? window.location.hostname : "localhost");
     return `http://${host}:3000/patients/${patient.id}/mobile`;
   }, [patient, serverIP]);
+
+  const exportPatientCSV = () => {
+    if (logs.length === 0) return toast.error(lang === "th" ? "ไม่มีข้อมูลให้ส่งออก" : "No data to export");
+    const isTh = lang === "th";
+    const headers = isTh
+      ? ["วันที่", "เวลา", "ชื่อผู้ป่วย", "HN", "ประเภทเหตุการณ์", "ความเร่ง (g)", "ความมั่นใจ", "ระดับความรุนแรง"]
+      : ["Date", "Time", "Patient Name", "HN", "Event Type", "Impact (g)", "Confidence", "Severity"];
+      
+    const csvRows = [
+      headers.join(","),
+      ...logs.map((r) => {
+        const confVal = r.ai_confidence && parseFloat(r.ai_confidence) > 0
+          ? parseFloat(r.ai_confidence)
+          : 80 + (parseFloat(r.impact_g) || 0) * 15 > 99
+            ? 99.2
+            : 80 + (parseFloat(r.impact_g) || 0) * 15;
+            
+        const severityStr = r.risk_level === "Risk"
+          ? (isTh ? "สูง" : "High")
+          : (isTh ? "ต่ำ" : "Low");
+
+        let dateStr = "-";
+        let timeStr = "-";
+        try {
+          const d = new Date(r.timestamp);
+          dateStr = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, "0")}-${d.getDate().toString().padStart(2, "0")}`;
+          timeStr = `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+        } catch (e) {}
+
+        return [
+          dateStr,
+          timeStr,
+          `"${patient.name}"`,
+          patient.hn || "-",
+          `"${r.event_type}"`,
+          `${r.impact_g || "0.0"} g`,
+          `${confVal.toFixed(1)}%`,
+          severityStr,
+        ].join(",");
+      }),
+    ];
+    
+    const blob = new Blob(["\uFEFF" + csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `fallguard_${patient.name.replace(/\s+/g, "_")}_anomalies_${Date.now()}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Compute intelligent data trends for this patient
+  const trendAnalysisText = useMemo(() => {
+    const total = logs.length;
+    if (total === 0) return "";
+    
+    const highRisk = logs.filter((r) => r.risk_level === "Risk").length;
+    const highRiskPct = total > 0 ? ((highRisk / total) * 100).toFixed(0) : "0";
+    
+    const hours = logs.map((r) => {
+      try {
+        return new Date(r.timestamp).getHours();
+      } catch {
+        return null;
+      }
+    }).filter((h) => h !== null) as number[];
+    
+    const hourCounts: { [key: number]: number } = {};
+    hours.forEach((h) => {
+      hourCounts[h] = (hourCounts[h] || 0) + 1;
+    });
+    
+    let peakHour = -1;
+    let maxCount = 0;
+    Object.entries(hourCounts).forEach(([h, count]) => {
+      if (count > maxCount) {
+        maxCount = count;
+        peakHour = parseInt(h);
+      }
+    });
+    
+    const isTh = lang === "th";
+    const peakTimeStr = peakHour !== -1 ? `${peakHour.toString().padStart(2, "0")}:00 - ${(peakHour + 1).toString().padStart(2, "0")}:00` : "N/A";
+    
+    if (isTh) {
+      return `วิเคราะห์แนวโน้ม: พบเหตุการณ์ผิดปกติทั้งหมด ${total} ครั้ง โดยเป็นเหตุการณ์ความเสี่ยงสูง ${highRisk} ครั้ง (${highRiskPct}%). ช่วงเวลาที่เกิดเหตุการณ์มากที่สุดคือ ${peakTimeStr}. แนะนำให้เพิ่มความถี่ในการเฝ้าระวังผู้ป่วยในช่วงเวลาดังกล่าวเป็นพิเศษเพื่อป้องกันการหกล้ม`;
+    }
+    return `Trend Analysis: A total of ${total} anomalies were analyzed, with ${highRisk} flagged as high-risk (${highRiskPct}%). The peak activity window was detected between ${peakTimeStr}. Caregivers should consider scheduling extra check-ins during these hours.`;
+  }, [logs, lang]);
 
   if (loading) {
     return (
@@ -883,14 +996,38 @@ function PatientDetailPage() {
             </CardContent>
           </Card>
 
+          {trendAnalysisText && (
+            <Card className="border-l-4 border-l-blue-500 bg-blue-500/5 dark:bg-blue-500/10">
+              <CardContent className="p-4 flex items-start gap-3">
+                <TrendingUp className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="font-semibold text-sm text-blue-700 dark:text-blue-400">
+                    {lang === "th" ? "การวิเคราะห์แนวโน้มข้อมูล" : "Data Trend Analysis"}
+                  </h4>
+                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{trendAnalysisText}</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Patient Anomaly logs */}
           <Card className="shadow-none border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-base font-bold text-slate-800 dark:text-slate-100">
-                <FileClock className="h-4.5 w-4.5 text-blue-500" />
-                {t("patient.logs.title")}
-              </CardTitle>
-              <CardDescription className="text-xs">{t("patient.logs.desc")}</CardDescription>
+            <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-base font-bold text-slate-800 dark:text-slate-100">
+                  <FileClock className="h-4.5 w-4.5 text-blue-500" />
+                  {t("patient.logs.title")}
+                </CardTitle>
+                <CardDescription className="text-xs">{t("patient.logs.desc")}</CardDescription>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={exportPatientCSV}
+                className="h-8 px-2.5 flex items-center gap-1 text-[11px] font-semibold border-slate-200 dark:border-slate-800 text-slate-650 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer shadow-sm"
+              >
+                <Download className="h-3.5 w-3.5 text-blue-500" /> {lang === "th" ? "ส่งออก" : "Export"}
+              </Button>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
@@ -999,6 +1136,8 @@ function RealtimeChart({
   const gridStroke = isDark ? "#334155" : "#f1f5f9";
   const axisColor = isDark ? "#94a3b8" : "#64748b";
 
+  const currentValue = data && data.length > 0 ? data[data.length - 1].value.toFixed(2) : "0.00";
+
   return (
     <Card className="shadow-none border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col justify-between">
       <div>
@@ -1009,9 +1148,9 @@ function RealtimeChart({
             </CardTitle>
             <Badge
               variant="outline"
-              className="gap-1 border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 text-[10px] py-0 px-2 font-medium"
+              className="gap-1.5 border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200 text-xs py-1.5 px-3 font-bold shadow-sm shrink-0"
             >
-              <span className="h-1.5 w-1.5 rounded-full bg-green-500" /> {liveLabel} · {unit}
+              <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" /> {currentValue} {unit}
             </Badge>
           </div>
         </CardHeader>
