@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { SettingsProvider, useSettings, useT } from "@/lib/settings-context";
 import { SettingsControls } from "@/components/settings-controls";
 import { LoginView } from "@/components/login-view";
-import { ProjectPage } from "./project";
+import { ProjectPage } from "../components/project-page";
 import { api, clearToken } from "@/lib/api-client";
 import {
   DropdownMenu,
@@ -229,7 +229,6 @@ function RootComponent() {
   }, [activeAlertPatient?.id]);
 
   const isMobileView = typeof window !== "undefined" && window.location.pathname.includes("/mobile");
-  const isPublicRoute = typeof window !== "undefined" && window.location.pathname === "/project";
 
   // Web Audio API siren alert sound
   const playAlertSound = () => {
@@ -422,18 +421,7 @@ function RootComponent() {
     );
   }
 
-  if (isPublicRoute && !token) {
-    return (
-      <QueryClientProvider client={queryClient}>
-        <SettingsProvider>
-          <main className="flex-1">
-            <Outlet />
-          </main>
-          <Toaster />
-        </SettingsProvider>
-      </QueryClientProvider>
-    );
-  }
+
 
   const handleTryDemo = () => {
     localStorage.setItem("token", "guest-demo-token");
@@ -550,8 +538,29 @@ function AppHeader({
   const showRedDot = unreadCount > 0 && !isNotificationsPage;
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur">
+    <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur relative">
       <SidebarTrigger />
+      
+      {/* Exit Experiment Mode Button (Only in Guest Mode) */}
+      {typeof window !== "undefined" && localStorage.getItem("token") === "guest-demo-token" && (
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={onLogout}
+            className="bg-red-50 dark:bg-red-950/20 text-red-650 dark:text-red-400 border-red-200 dark:border-red-900/50 hover:bg-red-100 hover:text-red-700 cursor-pointer font-bold text-xs px-2.5 py-1 sm:px-3 sm:py-1.5 h-auto flex items-center gap-1.5 shadow-sm"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">
+              {lang === "th" ? "ออกจากโหมดทดลอง" : "Exit Experiment Mode"}
+            </span>
+            <span className="inline sm:hidden">
+              {lang === "th" ? "ออก" : "Exit"}
+            </span>
+          </Button>
+        </div>
+      )}
+
       <div className="ml-auto flex items-center gap-1.5">
         <SettingsControls />
         <Button asChild variant="ghost" size="icon" aria-label={t("header.notifications")} className="relative cursor-pointer">

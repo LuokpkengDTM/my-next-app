@@ -14,6 +14,14 @@ const API_URL = import.meta.env.VITE_PUBLIC_API_URL || "http://localhost:8000";
 const getGuestData = () => {
   if (typeof window === "undefined") return { patients: mockPatients, anomalies: mockAnomalyLogs };
   
+  const currentVersion = "v5";
+  const storedVersion = localStorage.getItem("guest-mock-version");
+  if (storedVersion !== currentVersion) {
+    localStorage.removeItem("guest-patients");
+    localStorage.removeItem("guest-anomalies");
+    localStorage.setItem("guest-mock-version", currentVersion);
+  }
+
   let localP = localStorage.getItem("guest-patients");
   let localA = localStorage.getItem("guest-anomalies");
   
@@ -170,7 +178,6 @@ export const api = {
 
   getPatients: async () => {
     if (getToken() === "guest-demo-token") {
-      startFallTimer();
       const { patients } = getGuestData();
       return patients;
     }
@@ -252,16 +259,33 @@ export const api = {
       const data: Record<string, any> = {};
       patients.forEach((p: any) => {
         if (p.deviceId) {
-          const hr = Math.round(72 + Math.sin(Date.now() / 5000) * 8 + (p.status === "risk" ? 25 : 0));
+          const isRisk = p.status === "risk";
+          const time = Date.now();
+          const hr = Math.round(72 + Math.sin(time / 5000) * 8 + (isRisk ? 25 : 0));
+          const ax = +(Math.sin(time / 1000) * 0.2 + (isRisk ? 2.5 : 0)).toFixed(2);
+          const ay = +(Math.cos(time / 1200) * 0.15 + (isRisk ? -1.8 : 0.9)).toFixed(2);
+          const az = +(Math.sin(time / 1500) * 0.1 + (isRisk ? 1.2 : -0.2)).toFixed(2);
+          const gx = +(Math.sin(time / 800) * 15 + (isRisk ? 120 : 0)).toFixed(1);
+          const gy = +(Math.cos(time / 900) * 12 + (isRisk ? -95 : 0)).toFixed(1);
+          const gz = +(Math.sin(time / 1100) * 18 + (isRisk ? 65 : 0)).toFixed(1);
+          const acc_svm = +Math.sqrt(ax * ax + ay * ay + az * az).toFixed(2);
+          const gyro_svm = +Math.sqrt(gx * gx + gy * gy + gz * gz).toFixed(1);
+
           data[p.deviceId] = {
             device_id: p.deviceId,
             status: "Connected",
-            risk_label: p.status === "risk" ? "Risk" : "Normal",
+            risk_label: isRisk ? "Risk" : "Normal",
             heart_rate: hr,
             skin_contact: true,
-            accel_x: +(Math.sin(Date.now() / 1000) * 0.2 + (p.status === "risk" ? 2.5 : 0)).toFixed(2),
-            accel_y: +(Math.cos(Date.now() / 1200) * 0.15 + (p.status === "risk" ? -1.8 : 0.9)).toFixed(2),
-            accel_z: +(Math.sin(Date.now() / 1500) * 0.1 + (p.status === "risk" ? 1.2 : -0.2)).toFixed(2),
+            accel_x: ax,
+            accel_y: ay,
+            accel_z: az,
+            gyro_x: gx,
+            gyro_y: gy,
+            gyro_z: gz,
+            acc_svm,
+            gyro_svm,
+            confidence: isRisk ? "98" : "90",
             timestamp: new Date().toISOString()
           };
         }
@@ -326,7 +350,14 @@ export const api = {
 
   sendPatientMessage: async (id: string, message: string) => {
     if (getToken() === "guest-demo-token") {
-      return { status: "success" };
+      const { patients } = getGuestData();
+      const idx = patients.findIndex((p: any) => p.id === id);
+      if (idx !== -1) {
+        patients[idx].liveMessage = message;
+        saveGuestPatients(patients);
+        return { status: "success" };
+      }
+      throw new Error("Patient not found");
     }
     const res = await authFetch(`/api/patients/${id}/message`, {
       method: "PUT",
@@ -373,13 +404,15 @@ export const api = {
 
         const log = {
           id: `a_sos_${Date.now()}`,
-          patientId: id,
-          patientName: patients[idx].name,
-          date: new Date().toISOString(),
-          type: "Predicted Fall Risk" as const,
-          accel: 3.12,
+          patient_id: id,
+          patient_name: patients[idx].name,
+          hn: `HN-${patients[idx].deviceId}`,
+          timestamp: new Date().toISOString(),
+          event_type: "Predicted Fall Risk" as const,
+          impact_g: 3.12,
           gyro: 189.5,
-          severity: "high" as const
+          risk_level: "Risk" as const,
+          ai_confidence: "98.0"
         };
         anomalies.unshift(log);
         saveGuestAnomalies(anomalies);
@@ -395,6 +428,33 @@ export const api = {
   },
 
   getPublicPatient: async (id: string) => {
+    if (getToken() === "guest-demo-token") {
+      const { patients } = getGuestData();
+      const p = patients.find((p: any) => p.id === id);
+      if (p) {
+        return {
+          id: p.id,
+          name: p.name,
+          age: p.age,
+          gender: p.gender,
+          weight: p.weight,
+          height: p.height,
+          hn: `HN-${p.deviceId}`,
+          treatment_history: p.gender === "Female" ? "ความดันโลหิตสูง, กระดูกพรุน" : "ไม่มีประวัติการรักษารุนแรง",
+          device_id: p.deviceId,
+          room: p.room,
+          status: p.status,
+          live_message: p.liveMessage || "",
+          device_status: "Connected",
+          device_skin_contact: true,
+          device_svm: p.status === "risk" ? 3.15 : 1.0,
+          device_confidence: p.status === "risk" ? "98" : "90",
+          device_risk_label: p.status === "risk" ? "Risk" : "Normal",
+          fall_timestamp: p.status === "risk" ? new Date().toISOString() : ""
+        };
+      }
+      throw new Error("Patient not found");
+    }
     const res = await fetch(`${API_URL}/api/public/patients/${id}`, {
       headers: {
         "ngrok-skip-browser-warning": "true",
@@ -405,6 +465,9 @@ export const api = {
   },
 
   updatePublicPatientStatus: async (id: string, status: string, impact: number = 0.0, confidence: string = "0") => {
+    if (getToken() === "guest-demo-token") {
+      return api.updatePatientStatus(id, status, impact, confidence);
+    }
     const res = await fetch(`${API_URL}/api/public/patients/${id}/status`, {
       method: "PUT",
       headers: {
@@ -418,6 +481,16 @@ export const api = {
   },
 
   sendPublicPatientMessage: async (id: string, message: string) => {
+    if (getToken() === "guest-demo-token") {
+      const { patients } = getGuestData();
+      const idx = patients.findIndex((p: any) => p.id === id);
+      if (idx !== -1) {
+        patients[idx].liveMessage = message;
+        saveGuestPatients(patients);
+        return { status: "success" };
+      }
+      throw new Error("Patient not found");
+    }
     const res = await fetch(`${API_URL}/api/public/patients/${id}/message`, {
       method: "PUT",
       headers: {
@@ -431,6 +504,9 @@ export const api = {
   },
 
   triggerPublicSOS: async (id: string) => {
+    if (getToken() === "guest-demo-token") {
+      return api.triggerSOS(id);
+    }
     const res = await fetch(`${API_URL}/api/public/patients/${id}/sos`, {
       method: "POST",
       headers: {
@@ -442,6 +518,9 @@ export const api = {
   },
 
   getServerIP: async () => {
+    if (getToken() === "guest-demo-token") {
+      return { ip: "127.0.0.1" };
+    }
     const res = await fetch(`${API_URL}/api/public/server-ip`, {
       headers: {
         "ngrok-skip-browser-warning": "true",
@@ -452,6 +531,16 @@ export const api = {
   },
 
   getPublicPatientLogs: async (id: string) => {
+    if (getToken() === "guest-demo-token") {
+      const { anomalies } = getGuestData();
+      return anomalies
+        .filter((a: any) => a.patient_id === id)
+        .map((a: any) => ({
+          event_type: a.event_type,
+          timestamp: a.timestamp,
+          value: a.impact_g
+        }));
+    }
     const res = await fetch(`${API_URL}/api/public/patients/${id}/logs`, {
       headers: {
         "ngrok-skip-browser-warning": "true",
@@ -462,6 +551,9 @@ export const api = {
   },
 
   toggleSkinContact: async (deviceId: string, contact?: boolean) => {
+    if (getToken() === "guest-demo-token") {
+      return { status: "success" };
+    }
     const res = await fetch(`${API_URL}/api/public/devices/${deviceId}/skin-contact`, {
       method: "POST",
       headers: {
@@ -478,6 +570,21 @@ export const api = {
     if (getToken() === "guest-demo-token") {
       console.log("🔌 Connecting MOCK WebSocket for patient:", id);
       let active = true;
+
+      // Trigger siren simulation after 5 seconds, only once per session
+      if (typeof window !== "undefined" && !sessionStorage.getItem("guest-siren-triggered")) {
+        sessionStorage.setItem("guest-siren-triggered", "true");
+        setTimeout(() => {
+          if (!active) return;
+          console.log(`🚨 Triggering guest siren simulation for patient: ${id}`);
+          api.triggerSOS(id).then(() => {
+            window.dispatchEvent(new Event("guest-fall-triggered"));
+          }).catch(err => {
+            console.error("Failed to trigger guest SOS:", err);
+          });
+        }, 5000);
+      }
+
       const interval = setInterval(() => {
         if (!active) return;
         const { patients } = getGuestData();
@@ -491,25 +598,53 @@ export const api = {
         const accel_z = +(Math.sin(time / 1100) * 0.08 + (isRisk ? 1.1 * Math.sin(time / 100) : -0.25)).toFixed(2);
         
         onMessage({
+          id: p?.id || id,
+          name: p?.name || "",
+          age: p?.age || 70,
+          gender: p?.gender || "Male",
+          weight: p?.weight || 60,
+          height: p?.height || 165,
+          hn: p ? `HN-${p.deviceId}` : "HN-MOCK",
+          treatment_history: p?.gender === "Female" ? "ความดันโลหิตสูง, กระดูกพรุน" : "ไม่มีประวัติการรักษารุนแรง",
+          room: p?.room || "Ward 3B",
           device_id: p?.deviceId || "MOCK-DEV",
-          status: "Connected",
+          status: isRisk ? "risk" : "normal",
+          device_status: "Connected",
+          device_skin_contact: true,
           heart_rate,
-          skin_contact: true,
           accel_x,
           accel_y,
           accel_z,
           timestamp: new Date().toISOString(),
-          risk_label: isRisk ? "Risk" : "Normal"
+          risk_label: isRisk ? "Risk" : "Normal",
+          live_message: p?.liveMessage || "",
+          device_svm: isRisk ? 3.15 : 1.0,
+          device_confidence: isRisk ? "98" : "90",
+          device_risk_label: isRisk ? "Risk" : "Normal",
+          fall_timestamp: isRisk ? new Date().toISOString() : ""
         });
       }, 100);
 
-      return {
+      // Create a mock ws object with onopen and onclose properties
+      const mockWs = {
         close: () => {
           console.log("🔌 Closing MOCK WebSocket for patient:", id);
           active = false;
           clearInterval(interval);
+          if (mockWs.onclose) mockWs.onclose();
+        },
+        onopen: null as (() => void) | null,
+        onclose: null as (() => void) | null,
+      };
+
+      // Call onopen on next tick so caller has time to bind their handler
+      setTimeout(() => {
+        if (active && mockWs.onopen) {
+          mockWs.onopen();
         }
-      } as any;
+      }, 50);
+
+      return mockWs as any;
     }
 
     let wsBase = API_URL.replace(/^http/, "ws");

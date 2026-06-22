@@ -10,7 +10,6 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as ProjectRouteImport } from './routes/project'
 import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as AnomaliesRouteImport } from './routes/anomalies'
 import { Route as IndexRouteImport } from './routes/index'
@@ -21,11 +20,6 @@ import { Route as PatientsIdMobileRouteImport } from './routes/patients.$id.mobi
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProjectRoute = ProjectRouteImport.update({
-  id: '/project',
-  path: '/project',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NotificationsRoute = NotificationsRouteImport.update({
@@ -63,7 +57,6 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/anomalies': typeof AnomaliesRoute
   '/notifications': typeof NotificationsRoute
-  '/project': typeof ProjectRoute
   '/settings': typeof SettingsRoute
   '/patients/$id': typeof PatientsIdRouteWithChildren
   '/patients/': typeof PatientsIndexRoute
@@ -73,7 +66,6 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/anomalies': typeof AnomaliesRoute
   '/notifications': typeof NotificationsRoute
-  '/project': typeof ProjectRoute
   '/settings': typeof SettingsRoute
   '/patients/$id': typeof PatientsIdRouteWithChildren
   '/patients': typeof PatientsIndexRoute
@@ -84,7 +76,6 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/anomalies': typeof AnomaliesRoute
   '/notifications': typeof NotificationsRoute
-  '/project': typeof ProjectRoute
   '/settings': typeof SettingsRoute
   '/patients/$id': typeof PatientsIdRouteWithChildren
   '/patients/': typeof PatientsIndexRoute
@@ -96,7 +87,6 @@ export interface FileRouteTypes {
     | '/'
     | '/anomalies'
     | '/notifications'
-    | '/project'
     | '/settings'
     | '/patients/$id'
     | '/patients/'
@@ -106,7 +96,6 @@ export interface FileRouteTypes {
     | '/'
     | '/anomalies'
     | '/notifications'
-    | '/project'
     | '/settings'
     | '/patients/$id'
     | '/patients'
@@ -116,7 +105,6 @@ export interface FileRouteTypes {
     | '/'
     | '/anomalies'
     | '/notifications'
-    | '/project'
     | '/settings'
     | '/patients/$id'
     | '/patients/'
@@ -127,7 +115,6 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AnomaliesRoute: typeof AnomaliesRoute
   NotificationsRoute: typeof NotificationsRoute
-  ProjectRoute: typeof ProjectRoute
   SettingsRoute: typeof SettingsRoute
   PatientsIdRoute: typeof PatientsIdRouteWithChildren
   PatientsIndexRoute: typeof PatientsIndexRoute
@@ -140,13 +127,6 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/project': {
-      id: '/project'
-      path: '/project'
-      fullPath: '/project'
-      preLoaderRoute: typeof ProjectRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/notifications': {
@@ -210,7 +190,6 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AnomaliesRoute: AnomaliesRoute,
   NotificationsRoute: NotificationsRoute,
-  ProjectRoute: ProjectRoute,
   SettingsRoute: SettingsRoute,
   PatientsIdRoute: PatientsIdRouteWithChildren,
   PatientsIndexRoute: PatientsIndexRoute,

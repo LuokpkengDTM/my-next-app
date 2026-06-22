@@ -25,7 +25,6 @@ export function AppSidebar() {
     { title: t("nav.dashboard"), url: "/", icon: LayoutDashboard },
     { title: t("nav.patients"), url: "/patients", icon: Users },
     { title: t("nav.anomalies"), url: "/anomalies", icon: AlertTriangle },
-    { title: t("nav.projectInfo"), url: "/project", icon: FileText },
   ];
 
   return (

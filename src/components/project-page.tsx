@@ -1,4 +1,3 @@
-import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import {
   Shield,
@@ -13,22 +12,9 @@ import {
   Activity,
   Phone,
   Mail,
-  ExternalLink,
-  Info,
-  Maximize2
 } from "lucide-react";
 import { useSettings, useT } from "@/lib/settings-context";
 import { PixelHeart } from "@/components/ui/pixel-heart";
-
-export const Route = createFileRoute("/project")({
-  head: () => ({
-    meta: [
-      { title: "Project Info — Fall Guard" },
-      { name: "description", content: "AI-Powered Real-Time Fall Risk Prediction System for Elderly Using Gyroscope Sensor Analytics." },
-    ],
-  }),
-  component: ProjectPage,
-});
 
 export function ProjectPage({ onTryDemo, onSignInClick }: { onTryDemo?: () => void; onSignInClick?: () => void }) {
   const t = useT();
@@ -178,7 +164,7 @@ export function ProjectPage({ onTryDemo, onSignInClick }: { onTryDemo?: () => vo
           
           <p className="mx-auto max-w-2xl text-sm sm:text-base md:text-lg text-slate-400 font-light leading-relaxed">
             {isTh 
-              ? "ยกระดับการดูแลผู้สูงอายุแบบก้าวกระโดด ด้วยระบบตรวจจับสัญญาณความเสี่ยงการหกล้มเชิงรุก (Pre-fall) ผ่านการวิเคราะห์โครงสร้างพฤติกรรมและการเดินด้วยปัญญาประดิษฐ์แบบเรียลไทม์จากข้อมือ" 
+              ? "ยกระดับการดูแลผู้สูงอายุแบบก้าวกระโดด ด้วยระบบตรวจจับสัญญาณความเสี่ยงการหกล้มเชิงรุก (Pre-fall) ผ่านการวิเคราะห์โครงสร้างพฤทีการและการเดินด้วยปัญญาประดิษฐ์แบบเรียลไทม์จากข้อมือ" 
               : "Next-generation proactive care telemetry. Forecasting dynamic fall risks before they happen by analyzing time-series wrist gyroscope telemetry with Hybrid AI models."}
           </p>
 
@@ -334,7 +320,7 @@ export function ProjectPage({ onTryDemo, onSignInClick }: { onTryDemo?: () => vo
             <h2 className="text-3xl font-extrabold tracking-tight text-white">
               {isTh ? "การสาธิตการทำงานและผลงานวิจัย" : "Research Showcase & Video Demo"}
             </h2>
-            <p className="mx-auto max-w-xl text-sm text-slate-400 font-light">
+            <p className="mx-auto max-xl text-sm text-slate-400 font-light">
               {isTh 
                 ? "วิดีโอแสดงการแจ้งเตือนจริงของระบบ และโปสเตอร์แสดงข้อมูลโครงร่างทางวิชาการของทีมวิจัย" 
                 : "Live telemetry video warning demonstration and academic research poster details."}
@@ -347,7 +333,7 @@ export function ProjectPage({ onTryDemo, onSignInClick }: { onTryDemo?: () => vo
               <div className="space-y-3">
                 <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
                   <Video size={16} className="text-orange-500" />
-                  {isTh ? "วิดีโอแสดงการเชื่อมต่อและการแจ้งเตือนจริง" : "Video: Prototype Alert System Demonstration"}
+                  {isTh ? "วิดีโอผลงานนวัตกรรม" : "Video: Innovation Showcase"}
                 </div>
                 {/* Responsive container for YouTube video iframe */}
                 <div className="relative aspect-video w-full overflow-hidden rounded-xl border border-slate-900 bg-slate-950 shadow-xl shadow-blue-500/5">
@@ -361,7 +347,7 @@ export function ProjectPage({ onTryDemo, onSignInClick }: { onTryDemo?: () => vo
                 </div>
               </div>
               <span className="text-[10px] text-slate-500 leading-relaxed block mt-2">
-                * {isTh ? "วิดีโอประกอบ: แสดงพฤติกรรมการเคลื่อนไหว ข้อมูลสัญญาณไจโรสโคป และการตอบสนองของระบบแจ้งเตือนแบบวินาทีต่อวินาที" : "Telemetry details: Displays second-by-second sensor response and alarm panel triggers."}
+                * {isTh ? "วิดีโอประกอบ: แสดงการสาธิตการทำงานจริงของอุปกรณ์สวมใส่ ระบบพยากรณ์ความเสี่ยง และขั้นตอนการเตือนภัยฉุกเฉินสำหรับผู้ดูแล" : "Telemetry video: Demonstrating real-time wearable device operations, AI risk prediction, and emergency caregiver alerts."}
               </span>
             </div>
 
@@ -519,8 +505,6 @@ export function ProjectPage({ onTryDemo, onSignInClick }: { onTryDemo?: () => vo
               : "© 2026 Fall Guard AI Fall Risk Telemetry System. Walailak University. All rights reserved."}
           </p>
           <div className="flex justify-center gap-6 text-[10px] text-slate-600">
-            <span>{isTh ? "สาขาเทคโนโลยีดิจิทัลทางการแพทย์" : "Medical Digital Technology"}</span>
-            <span>·</span>
             <span>{isTh ? "สำนักวิชาสารสนเทศศาสตร์" : "School of Informatics"}</span>
           </div>
         </div>
